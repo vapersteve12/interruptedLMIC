@@ -1,11 +1,7 @@
 /*
 
    .code for blackout detection or case opening.
-   TODO: make the REST of code
    TODO: make a board
-   TODO: time sensitive code: use interrupts() & noInterrupts() **
-
-
 */
 
 #include <lmic.h>
@@ -18,8 +14,8 @@ volatile bool interrupted = false;
 volatile bool door = 0;
 
 
-static const PROGMEM u1_t NWKSKEY[16] = { 0x00, 0xAC, 0xBE, 0x62, 0x04, 0x49, 0x7A, 0xFC, 0xFD, 0xA1, 0x95, 0xF2, 0x5C, 0x08, 0x6A, 0x33 };
-static const u1_t PROGMEM APPSKEY[16] = { 0x00, 0x1C, 0x8D, 0x48, 0x96, 0x9C, 0xDD, 0x6D, 0xBD, 0x9C, 0xBA, 0x59, 0x0A, 0x53, 0x00, 0xDE  };
+static const PROGMEM u1_t NWKSKEY[16] = { 0x01234123413414140, 0xAC, 0xBE, 0x62, 0x04, 0x49, 0x7A, 0xFC, 0xFD, 0xA1, 0x95, 0xF2, 0x5C, 0x08, 0x6A, 0x33 };
+static const u1_t PROGMEM APPSKEY[16] = { 0x0312412414124124140, 0x1C, 0x8D, 0x48, 0x96, 0x9C, 0xDD, 0x6D, 0xBD, 0x9C, 0xBA, 0x59, 0x0A, 0x53, 0x00, 0xDE  };
 static const u4_t DEVADDR = 0x00C7C270;
 
 void os_getArtEui (u1_t* buf) { }
@@ -46,10 +42,10 @@ void sleeping(int cycles)
 {
   for (int i = 0; i < cycles; i++)
   {
-    Serial.println("Sleep...");
+    Serial.println(F("Sleep..."));
     delay(100);
     LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF);
-    if (interrupted)
+    if (interrupted) //leave sleep cycle if interrutred
     {
       interrupted = false;
       return;
@@ -59,8 +55,10 @@ void sleeping(int cycles)
 
 void onEvent (ev_t ev) {
   Serial.print(os_getTime());
-  Serial.print(": ");
-  switch (ev) {
+  Serial.print(F(": "));
+  switch (ev) 
+  {
+    /*
     case EV_SCAN_TIMEOUT:
       Serial.println(F("EV_SCAN_TIMEOUT"));
       break;
@@ -88,11 +86,11 @@ void onEvent (ev_t ev) {
     case EV_REJOIN_FAILED:
       Serial.println(F("EV_REJOIN_FAILED"));
       break;
+      */
     case EV_TXCOMPLETE:
       Serial.println(F("EV_TXCOMPLETE (includes waiting for RX windows)"));
       if (LMIC.txrxFlags & TXRX_ACK)
         Serial.println(F("Received ack"));
-        
       if (LMIC.dataLen)
       {
         Serial.print(F("Received "));
@@ -103,9 +101,15 @@ void onEvent (ev_t ev) {
         {
           case 128:
             openTime = LMIC.frame[LMIC.dataBeg];
+            Serial.print(F("Alert time set to: "));
+            Serial.print(openTime*8);
+            Serial.println(F(" s"));
             break;
           case 129:
             week = LMIC.frame[LMIC.dataBeg];
+            Serial.print(F("Sleeptime set to: "));
+            Serial.print(week*8);
+            Serial.println(F(" s"));
             break;
           case 130:
             reset();
@@ -124,12 +128,12 @@ void onEvent (ev_t ev) {
         }
         */
       }
-      if (door == true)
+      if (door == true) //OPEN
       {
         sleepTime = openTime;
         mydata[0] = 0x00;
       }
-      else
+      else // CLOSE
       {
         sleepTime = week;
         mydata[0] = 0x01;
@@ -138,6 +142,7 @@ void onEvent (ev_t ev) {
       os_setCallback(&sendjob, do_send);
       sleeping(sleepTime);
       break;
+      /*
     case EV_LOST_TSYNC:
       Serial.println(F("EV_LOST_TSYNC"));
       break;
@@ -145,9 +150,7 @@ void onEvent (ev_t ev) {
       Serial.println(F("EV_RESET"));
       break;
     case EV_RXCOMPLETE:
-      // data received in ping slot
       Serial.println(F("EV_RXCOMPLETE"));
-
       break;
     case EV_LINK_DEAD:
       Serial.println(F("EV_LINK_DEAD"));
@@ -155,6 +158,7 @@ void onEvent (ev_t ev) {
     case EV_LINK_ALIVE:
       Serial.println(F("EV_LINK_ALIVE"));
       break;
+      */
     default:
       Serial.println(F("Unknown event"));
       break;
@@ -170,7 +174,6 @@ void do_send(osjob_t* j)
   }
   else
   {
-    //LMIC_setTxData2(1, mystring, sizeof(mystring) - 1, 0);
     LMIC_setTxData2(192, (uint8_t*)mydata, sizeof(mydata), 0); //u1_t port, xref2u1_t data, u1_t dlen, u1_t confirmed
     Serial.println(F("Packet queued"));
   }
@@ -181,7 +184,7 @@ void setup()
   Serial.begin(9600);
   Serial.println(F("Starting"));
   pinMode(2, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(2), isrDoor, FALLING);
+  attachInterrupt(digitalPinToInterrupt(interruptPin), isrDoor, FALLING);
   noInterrupts();
   os_init();
   LMIC_reset();
@@ -221,18 +224,23 @@ void loop()
 
 void isrDoor()
 {
-  detachInterrupt(digitalPinToInterrupt(2));
+  detachInterrupt(digitalPinToInterrupt(interruptPin));
   door = true;
   interrupted = true;
   sleepTime = openTime;
   Serial.println(F("#Door opened"));
+  Serial.println(F("'door flag' 1"));
+  Serial.println(F("'interrupt' flag 1"));
 }
 
 void reset()
 {
   door = false;
   interrupted = false;
-  Serial.println(F("#Resetted.."));
-  EIFR = 1;
-  attachInterrupt(digitalPinToInterrupt(2), isrDoor, FALLING);
+  Serial.println(F("#Reset..."));
+  Serial.println(F("'door flag' 1"));
+  Serial.println(F("'interrupt' flag 1"));
+  EIFR = 1; //clear interrupt flag for INT0
+  Serial.println(F("INT0 status register cleared! "));
+  attachInterrupt(digitalPinToInterrupt(interruptPin), isrDoor, FALLING);
 }
