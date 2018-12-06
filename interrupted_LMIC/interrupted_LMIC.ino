@@ -2,6 +2,7 @@
 
    .code for blackout detection or case opening.
    TODO: make a board
+   TODO: git
 */
 
 #include <lmic.h>
